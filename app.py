@@ -262,7 +262,16 @@ with pages[3]:
             else:
                 try:
                     answer, trace = run_research_agent(question, shown or all_docs, financial_rows, api_key, model=model)
-                    matches = retrieve(question, shown or all_docs)
+                    matches = []
+                    for company in COMPANIES:
+                        if company in companies:
+                            company_matches = retrieve(
+                                question,
+                                shown or all_docs,
+                                companies=[company],
+                                limit=1
+                            )
+                            matches.extend(company_matches)
                 except Exception as exc:
                     answer, matches = make_evidence_answer(question, shown or all_docs)
                     answer = (f"The OpenAI agent was unavailable ({type(exc).__name__}). "
