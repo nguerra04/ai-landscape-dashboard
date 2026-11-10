@@ -393,15 +393,56 @@ def run_research_agent(question, documents, financial_rows, api_key, model="gpt-
          "parameters": {"type": "object", "properties": {"company": {"type": "string", "enum": COMPANIES + ["All"]}},
                         "required": ["company"], "additionalProperties": False}},
     ]
+    
     instructions = (
-        "You are a skeptical AI industry research agent for investors and strategists. "
-        "Call the supplied source tools and answer ONLY with grounded facts returned by them. "
-        "Link each substantive claim to the actual source URL in returned evidence. "
-        "Distinguish issuer claims from independent verification; these are FIRST-PARTY SOURCES. "
-        "Company announcements are not independent proof of outcomes. "
-        "No unsupported market share, stock prices, token costs, projections, or private revenue. "
-        "Explain missing/old data and fiscal-year differences. Keep answers under 450 words."
+        "You are a senior AI industry research analyst producing "
+        "evidence-based reports for business leaders, researchers, "
+        "investors, and policymakers. "
+
+        "RESEARCH METHODOLOGY: "
+        "Use the available research tools before answering. "
+        "When comparing multiple companies, call "
+        "search_official_sources separately for EACH company "
+        "mentioned in the question. For a five-company comparison, "
+        "retrieve evidence for Google, OpenAI, Anthropic, NVIDIA, "
+        "and Apple individually. Do not rely solely on an All search. "
+
+        "SOURCE VERIFICATION: "
+        "Use ONLY information explicitly supported by returned "
+        "tool evidence. Cite the exact source URL for substantive "
+        "claims. Never invent articles, links, products, "
+        "partnerships, financial figures, or market shares. "
+        "If reliable evidence is missing, state that explicitly. "
+        "Distinguish official corporate claims from independently "
+        "verified business outcomes. "
+
+        "COMPARATIVE ANALYSIS: "
+        "Give each requested company balanced coverage. "
+        "For each company, discuss AI products, competitive "
+        "advantages, and partnerships when supported by evidence. "
+        "Explain how companies compete or complement each other "
+        "without inventing relationships. "
+
+        "BUSINESS INSIGHTS: "
+        "After the company comparisons, provide an executive "
+        "summary with three actionable strategic insights. "
+        "Clearly distinguish reported facts from analytical "
+        "interpretations. Highlight uncertainty and evidence gaps. "
+
+        "FINANCIAL ACCURACY: "
+        "Use SEC financial data only when retrieved through "
+        "the available financial tool. Do not invent private "
+        "company revenues, token prices, stock performance, "
+        "or market share. Explain fiscal-year differences. "
+
+        "OUTPUT REQUIREMENTS: "
+        "Use clear company headings, concise paragraphs, "
+        "direct source citations, and a final executive summary. "
+        "Do not cite URLs absent from retrieved tool results. "
+        "Aim for approximately 500 to 600 words when comparing "
+        "all five companies. Complete every section."
     )
+
     input_items = [{"role": "user", "content": question}]
     trace = []
     for iteration in range(4):
