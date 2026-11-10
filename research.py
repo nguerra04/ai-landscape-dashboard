@@ -407,7 +407,7 @@ def run_research_agent(question, documents, financial_rows, api_key, model="gpt-
     for iteration in range(4):
         response = client.responses.create(model=model, instructions=instructions, input=input_items,
                                            tools=tools, tool_choice="required" if iteration == 0 else "auto",
-                                           max_output_tokens=900, store=False)
+                                           max_output_tokens=2400, store=False)
         input_items += response.output
         calls = [x for x in response.output if x.type == "function_call"]
         if not calls:
