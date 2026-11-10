@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+.env
+.streamlit/secrets.toml
+.ipynb_checkpoints/
+*.pyc
