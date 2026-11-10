@@ -245,6 +245,39 @@ def collect_news(max_per_company=8):
                 company_docs.append(doc)
             if len(company_docs) >= max_per_company:
                 break
+        
+        # Use official OpenAI RSS summaries if full articles are blocked.
+        if company == "OpenAI" and not company_docs:
+            try:
+                feed_url = RSS_FEEDS["OpenAI"][0]
+                response = session.get(feed_url, timeout=TIMEOUT)
+                response.raise_for_status()
+
+                for entry in feedparser.parse(response.content).entries:
+                    link = normalize_url(entry.get("link", ""))
+                    title = strip_text(entry.get("title", ""), 240)
+                    summary = strip_text(entry.get("summary", ""))
+
+                    if not verified_domain(link, "OpenAI"):
+                        continue
+                    if len(title) < 15 or len(summary) < 35:
+                        continue
+
+                    doc = make_doc(
+                        "OpenAI", link, title, summary,
+                        entry.get("published") or entry.get("updated"),
+                        kind="Official publisher RSS excerpt"
+                    )
+                    if doc:
+                        company_docs.append(doc)
+                    if len(company_docs) >= max_per_company:
+                        break
+
+            except requests.RequestException as exc:
+                warnings.append(
+                    f"OpenAI RSS fallback failed: {type(exc).__name__}"
+                )
+
         # Reliable primary-source context even if a feed is unavailable.
         if not company_docs:
             for title, url in REFERENCE_PAGES[company]:
