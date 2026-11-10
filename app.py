@@ -192,8 +192,35 @@ with pages[1]:
                 rows.append({"Company": d["company"], "Topic": t, "Source count": 1})
         if rows:
             grouped = pd.DataFrame(rows).groupby(["Company", "Topic"], as_index=False)["Source count"].sum()
-            fig = px.bar(grouped, x="Company", y="Source count", color="Topic", barmode="group",
-                         title="Verified corporate source coverage by topic")
+
+            company_order = (
+                grouped.groupby("Company")["Source count"]
+                .sum()
+                .sort_values(ascending=False)
+                .index.tolist()
+            )
+
+            fig = px.bar(
+                grouped,
+                x="Company",
+                y="Source count",
+                color="Topic",
+                barmode="group",
+                text="Source count",
+                category_orders={"Company": company_order},
+                title="Verified corporate source coverage by topic"
+            )
+
+            fig.update_traces(textposition="outside", cliponaxis=False)
+            fig.update_layout(
+                xaxis_title="Company",
+                yaxis_title="Verified source count",
+                legend_title_text="Topic",
+                margin=dict(l=10, r=10, t=60, b=10),
+                bargap=0.22,
+            )
+            fig.update_yaxes(dtick=1, rangemode="tozero")
+
             st.plotly_chart(fig, use_container_width=True)
         st.caption("Counts depend on the limited collected corpus and source publishing volume; "
                    "they do not measure market share or provide an exhaustive industry ranking.")
@@ -219,14 +246,65 @@ with pages[2]:
              "no directly comparable 10-K series here.")
     if financial_rows:
         fdf = pd.DataFrame(financial_rows).copy()
-        fdf["Revenue (USD billions)"] = fdf["value_usd"] / 1e9
+        fdf["Revenue (USD billions)"] = (fdf["value_usd"] / 1e9).round(1)
+        fdf["Fiscal year"] = fdf["fy"].astype(int)
         fdf["Fiscal period end"] = fdf["end"]
-        fig = px.line(fdf.sort_values("Fiscal period end"), x="Fiscal period end", y="Revenue (USD billions)",
-                      color="company", markers=True, title="Annual revenue in SEC 10-K filings (fiscal years differ)")
-        fig.update_layout(legend_title_text="Company")
+        fdf["Company"] = fdf["company"]
+        fdf["Revenue label"] = "$" + fdf["Revenue (USD billions)"].map(lambda x: f"{x:,.1f}B")
+
+        fdf = fdf.sort_values(["Company", "Fiscal year"])
+
+        fig = px.line(
+            fdf,
+            x="Fiscal year",
+            y="Revenue (USD billions)",
+            color="Company",
+            markers=True,
+            text="Revenue label",
+            title="Annual revenue from SEC 10-K filings by fiscal year"
+        )
+
+        fig.update_traces(textposition="top center")
+        fig.update_layout(
+            legend_title_text="Company",
+            margin=dict(l=10, r=10, t=60, b=10),
+            xaxis_title="Fiscal year in 10-K",
+            yaxis_title="Revenue (USD billions)"
+        )
+        fig.update_xaxes(dtick=1)
+        fig.update_yaxes(tickprefix="$", ticksuffix="B", rangemode="tozero")
+
         st.plotly_chart(fig, use_container_width=True)
-        table = fdf[["company", "Fiscal period end", "Revenue (USD billions)", "filed", "url"]].rename(
-            columns={"company": "Company", "filed": "SEC filed on", "url": "Primary SEC source"})
+
+        latest = (
+            fdf.sort_values(["Company", "Fiscal year"])
+            .groupby("Company", as_index=False)
+            .tail(1)
+            .sort_values("Revenue (USD billions)", ascending=False)
+        )
+
+        latest_fig = px.bar(
+            latest,
+            x="Company",
+            y="Revenue (USD billions)",
+            color="Company",
+            text="Revenue label",
+            title="Latest available annual revenue by company"
+        )
+
+        latest_fig.update_traces(textposition="outside", cliponaxis=False)
+        latest_fig.update_layout(
+            showlegend=False,
+            margin=dict(l=10, r=10, t=60, b=10),
+            xaxis_title="Company",
+            yaxis_title="Revenue (USD billions)"
+        )
+        latest_fig.update_yaxes(tickprefix="$", ticksuffix="B", rangemode="tozero")
+
+        st.plotly_chart(latest_fig, use_container_width=True)
+
+        table = fdf[["Company", "Fiscal year", "Fiscal period end", "Revenue (USD billions)", "filed", "url"]].rename(
+            columns={"filed": "SEC filed on", "url": "Primary SEC source"})
         st.dataframe(table, hide_index=True, use_container_width=True,
                      column_config={"Primary SEC source": st.column_config.LinkColumn()})
         st.warning("**Comparability:** fiscal calendars differ, SEC facts may be restated, and the chart is not a stock-price "
