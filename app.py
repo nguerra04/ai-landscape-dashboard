@@ -142,7 +142,7 @@ k4.metric("Source categories", len(KEYWORDS))
 
 pages = st.tabs(["Overview", "Company comparisons", "Financial evidence", "Research agent + RAG", "Sources & methodology"])
 
-es[0]:
+with pages[0]:
     st.subheader("Overview for business leaders and market researchers")
     st.info("**Interpretation:** This dashboard measures the volume and content of *official company announcements*, "
             "not industry market share, business outcomes, or independent claims verification.")
