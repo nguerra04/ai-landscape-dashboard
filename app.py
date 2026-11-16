@@ -142,7 +142,7 @@ k4.metric("Source categories", len(KEYWORDS))
 
 pages = st.tabs(["Overview", "Company comparisons", "Financial evidence", "Research agent + RAG", "Sources & methodology"])
 
-with pages[0]:
+es[0]:
     st.subheader("Overview for business leaders and market researchers")
     st.info("**Interpretation:** This dashboard measures the volume and content of *official company announcements*, "
             "not industry market share, business outcomes, or independent claims verification.")
@@ -190,40 +190,91 @@ with pages[1]:
         for d in shown:
             for t in topic_matches(d):
                 rows.append({"Company": d["company"], "Topic": t, "Source count": 1})
+
         if rows:
-            grouped = pd.DataFrame(rows).groupby(["Company", "Topic"], as_index=False)["Source count"].sum()
-
-            company_order = (
-                grouped.groupby("Company")["Source count"]
+            grouped = (
+                pd.DataFrame(rows)
+                .groupby(
+                    ["Company", "Topic"],
+                    as_index=False
+                )["Source count"]
                 .sum()
-                .sort_values(ascending=False)
-                .index.tolist()
             )
 
-            fig = px.bar(
-                grouped,
-                x="Company",
-                y="Source count",
-                color="Topic",
-                barmode="group",
-                text="Source count",
-                category_orders={"Company": company_order},
-                title="Verified corporate source coverage by topic"
+            # Include all selected companies and topics,
+            # even when there are zero matching documents.
+            active_companies = [
+                c for c in COMPANIES if c in companies
+            ]
+
+            topics = list(KEYWORDS.keys())
+
+            full_index = pd.MultiIndex.from_product(
+                [active_companies, topics],
+                names=["Company", "Topic"]
             )
 
-            fig.update_traces(textposition="outside", cliponaxis=False)
+            grouped = (
+                grouped.set_index(["Company", "Topic"])
+                .reindex(full_index, fill_value=0)
+                .reset_index()
+            )
+
+            matrix = (
+                grouped.pivot(
+                    index="Company",
+                    columns="Topic",
+                    values="Source count"
+                )
+                .reindex(
+                    index=active_companies,
+                    columns=topics
+                )
+            )
+
+            fig = px.imshow(
+                matrix,
+                text_auto=True,
+                aspect="auto",
+                color_continuous_scale="Blues",
+                labels={
+                    "x": "Research topic",
+                    "y": "Company",
+                    "color": "Source mentions"
+                },
+                title="Official source mentions by company and topic"
+            )
+
+            fig.update_traces(
+                hovertemplate=(
+                    "%{y}<br>%{x}: %{z} matching sources"
+                    "<extra></extra>"
+                )
+            )
+
             fig.update_layout(
-                xaxis_title="Company",
-                yaxis_title="Verified source count",
-                legend_title_text="Topic",
-                margin=dict(l=10, r=10, t=60, b=10),
-                bargap=0.22,
+                height=440,
+                margin=dict(
+                    l=10,
+                    r=10,
+                    t=65,
+                    b=25
+                ),
+                xaxis_tickangle=-15
             )
-            fig.update_yaxes(dtick=1, rangemode="tozero")
 
-            st.plotly_chart(fig, use_container_width=True)
-        st.caption("Counts depend on the limited collected corpus and source publishing volume; "
-                   "they do not measure market share or provide an exhaustive industry ranking.")
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
+
+            st.caption(
+                "Numbers count matching collected documents, "
+                "not products, partnerships, revenue, or market share. "
+                "A 0 means no matching source in the current "
+                "filtered corpus."
+            )
+
     cols = st.columns(2)
     for i, company in enumerate(COMPANIES):
         with cols[i % 2]:
