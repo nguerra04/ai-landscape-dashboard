@@ -246,69 +246,79 @@ with pages[2]:
              "no directly comparable 10-K series here.")
     if financial_rows:
         fdf = pd.DataFrame(financial_rows).copy()
-        fdf["Revenue (USD billions)"] = (fdf["value_usd"] / 1e9).round(1)
-        fdf["Fiscal year"] = fdf["fy"].astype(int)
-        fdf["Fiscal period end"] = fdf["end"]
+        fdf["Fiscal period end"] = pd.to_datetime(fdf["end"], errors="coerce")
+        fdf = fdf.dropna(subset=["Fiscal period end"])
+        fdf = (fdf.sort_values("filed")
+               .drop_duplicates(["company", "Fiscal period end"], keep="last"))
+        fdf["Fiscal year"] = fdf["Fiscal period end"].dt.year.astype(int)
+        fdf["Revenue (USD billions)"] = fdf["value_usd"].astype(float) / 1e9
         fdf["Company"] = fdf["company"]
-        fdf["Revenue label"] = "$" + fdf["Revenue (USD billions)"].map(lambda x: f"{x:,.1f}B")
+        fdf["Revenue label"] = fdf["Revenue (USD billions)"].map(
+            lambda value: f"${value:,.1f}B"
+        )
+        fdf = fdf.sort_values(["Company", "Fiscal period end"])
 
-        fdf = fdf.sort_values(["Company", "Fiscal year"])
-
+        colors = {"Apple": "#86c9ff", "Google": "#1977cf", "NVIDIA": "#ff9fab"}
         fig = px.line(
-            fdf,
-            x="Fiscal year",
-            y="Revenue (USD billions)",
-            color="Company",
-            markers=True,
-            text="Revenue label",
-            title="Annual revenue from SEC 10-K filings by fiscal year"
+            fdf, x="Fiscal year", y="Revenue (USD billions)", color="Company",
+            markers=True, color_discrete_map=colors,
+            title="Annual revenue by fiscal year (reported in SEC 10-Ks)",
+            custom_data=["Fiscal period end"],
         )
-
-        fig.update_traces(textposition="top center")
+        fig.update_traces(
+            line=dict(width=3), marker=dict(size=9),
+            hovertemplate=("<b>%{fullData.name}</b><br>FY %{x}<br>"
+                           "Revenue: $%{y:,.1f}B<extra></extra>"),
+        )
         fig.update_layout(
-            legend_title_text="Company",
-            margin=dict(l=10, r=10, t=60, b=10),
-            xaxis_title="Fiscal year in 10-K",
-            yaxis_title="Revenue (USD billions)"
+            xaxis_title="Fiscal year (from period-end date)",
+            yaxis_title="Revenue (USD billions)", legend_title="Company",
+            margin=dict(l=10, r=30, t=70, b=20),
         )
-        fig.update_xaxes(dtick=1)
+        fig.update_xaxes(type="linear", dtick=1)
         fig.update_yaxes(tickprefix="$", ticksuffix="B", rangemode="tozero")
 
+        latest = (fdf.sort_values("Fiscal period end")
+                  .groupby("Company", as_index=False).tail(1))
+        for _, record in latest.iterrows():
+            fig.add_annotation(
+                x=int(record["Fiscal year"]),
+                y=float(record["Revenue (USD billions)"]),
+                text=record["Revenue label"], showarrow=True,
+                arrowhead=0, ax=0, ay=-27,
+            )
         st.plotly_chart(fig, use_container_width=True)
+        st.caption("Lines begin at different years when the source data has "
+                   "different reporting periods. Fiscal year is derived from "
+                   "the revenue period's end date, not the SEC filing's `fy` field.")
 
-        latest = (
-            fdf.sort_values(["Company", "Fiscal year"])
-            .groupby("Company", as_index=False)
-            .tail(1)
-            .sort_values("Revenue (USD billions)", ascending=False)
+        latest = latest.sort_values("Revenue (USD billions)", ascending=False)
+        latest["Company and FY"] = (
+            latest["Company"] + " · FY" + latest["Fiscal year"].astype(str)
         )
-
         latest_fig = px.bar(
-            latest,
-            x="Company",
-            y="Revenue (USD billions)",
-            color="Company",
-            text="Revenue label",
-            title="Latest available annual revenue by company"
+            latest, x="Company and FY", y="Revenue (USD billions)",
+            color="Company", text="Revenue label", color_discrete_map=colors,
+            title="Latest available annual revenue (fiscal years may differ)",
         )
-
         latest_fig.update_traces(textposition="outside", cliponaxis=False)
         latest_fig.update_layout(
-            showlegend=False,
-            margin=dict(l=10, r=10, t=60, b=10),
-            xaxis_title="Company",
-            yaxis_title="Revenue (USD billions)"
+            showlegend=False, xaxis_title="Company and fiscal year",
+            yaxis_title="Revenue (USD billions)",
+            margin=dict(l=10, r=20, t=70, b=15),
         )
         latest_fig.update_yaxes(tickprefix="$", ticksuffix="B", rangemode="tozero")
-
         st.plotly_chart(latest_fig, use_container_width=True)
 
-        table = fdf[["Company", "Fiscal year", "Fiscal period end", "Revenue (USD billions)", "filed", "url"]].rename(
-            columns={"filed": "SEC filed on", "url": "Primary SEC source"})
+        table = fdf[["Company", "Fiscal year", "Fiscal period end",
+                     "Revenue (USD billions)", "filed", "url"]].rename(
+            columns={"filed": "SEC filed on", "url": "Primary SEC source"}
+        )
         st.dataframe(table, hide_index=True, use_container_width=True,
                      column_config={"Primary SEC source": st.column_config.LinkColumn()})
-        st.warning("**Comparability:** fiscal calendars differ, SEC facts may be restated, and the chart is not a stock-price "
-                   "or profitability comparison. Values may reflect issuer-specific XBRL tags.")
+        st.warning("**Comparability:** fiscal calendars differ, 10-K facts may "
+                   "be restated, and overall company revenue is not AI-only revenue. "
+                   "Do not compare different fiscal years as the same period.")
     else:
         st.info("SEC annual data is not populated. Set `SEC_CONTACT_EMAIL` in Streamlit **Secrets**, "
                 "or in GitHub Actions repository secrets, then refresh. Use your real contact email as SEC requires.")
