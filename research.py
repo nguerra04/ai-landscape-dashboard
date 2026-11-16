@@ -292,42 +292,95 @@ def collect_news(max_per_company=8):
     return {"collected_at": now_utc(), "documents": docs, "source_counts": sources, "warnings": warnings}
 
 
+
 def fetch_sec_annual_revenue(company, contact_email):
-    """USD annual revenue from 10-K Company Facts (not stock market cap)."""
+    """Return up to five recent annual revenue periods from verified SEC 10-K facts.
+
+    A companyfacts `fy` labels the filing and may also appear on prior-year
+    comparative amounts. The period's `end` date determines its chart year.
+    """
     if company not in SEC_CIK:
-        return [], "Private / no comparable public-company 10-K revenue series"
+        return [], "No comparable public-company 10-K revenue series"
     if not contact_email or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", contact_email):
-        return [], "Add SEC_CONTACT_EMAIL in Streamlit secrets to access SEC data."
+        return [], "Add SEC_CONTACT_EMAIL in Streamlit Secrets."
+
     url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{SEC_CIK[company]}.json"
     try:
-        r = get_session(contact_email).get(url, timeout=25)
-        r.raise_for_status()
-        data = r.json()
-        us_gaap = data.get("facts", {}).get("us-gaap", {})
-        entries = []
-        for tag in REVENUE_TAGS:
-            values = us_gaap.get(tag, {}).get("units", {}).get("USD", [])
-            for item in values:
+        response = get_session(contact_email).get(url, timeout=25)
+        response.raise_for_status()
+        facts = response.json().get("facts", {}).get("us-gaap", {})
+
+        # Collect all relevant revenue tags.
+        by_period = {}
+
+        for tag_priority, tag in enumerate(REVENUE_TAGS):
+            for item in facts.get(tag, {}).get("units", {}).get("USD", []):
                 try:
-                    duration = (datetime.fromisoformat(item["end"]) - datetime.fromisoformat(item["start"])).days
-                    if item.get("form") == "10-K" and item.get("fp") == "FY" and 320 <= duration <= 400 and item.get("val") is not None:
-                        entries.append({"company": company, "end": item["end"], "fy": int(item["fy"]),
-                                        "value_usd": int(item["val"]), "filed": item.get("filed", ""),
-                                        "accession": item.get("accn", ""), "tag": tag,
-                                        "url": url, "source": "SEC EDGAR XBRL Company Facts (10-K)"})
+                    if item.get("form") not in ("10-K", "10-K/A"):
+                        continue
+                    if item.get("fp") != "FY":
+                        continue
+
+                    start, end = item["start"], item["end"]
+                    days = (
+                        datetime.fromisoformat(end)
+                        - datetime.fromisoformat(start)
+                    ).days
+
+                    if not 320 <= days <= 400 or item.get("val") is None:
+                        continue
+
+                    amount = int(item["val"])
+
+                    if amount < 0:
+                        continue
+
+                    record = {
+                        "company": company,
+                        "end": end,
+                        "fy": int(end[:4]),
+                        "value_usd": amount,
+                        "filed": item.get("filed", ""),
+                        "accession": item.get("accn", ""),
+                        "tag": tag,
+                        "url": url,
+                        "source": "SEC EDGAR XBRL Company Facts (10-K)",
+                    }
+
+                    prior = by_period.get(end)
+
+                    if (
+                        prior is None
+                        or tag_priority < prior[0]
+                        or (
+                            tag_priority == prior[0]
+                            and record["filed"] > prior[1]
+                        )
+                    ):
+                        by_period[end] = (
+                            tag_priority,
+                            record["filed"],
+                            record
+                        )
+
                 except (KeyError, ValueError, TypeError):
-                    pass
-            if entries:
-                break
-        # Later-filed facts can restate prior years. Keep newest for each fiscal period end.
-        latest = {}
-        for e in entries:
-            key = e["end"]
-            if key not in latest or e["filed"] > latest[key]["filed"]:
-                latest[key] = e
-        return sorted(latest.values(), key=lambda e: e["end"])[-5:], None
-    except (requests.RequestException, ValueError) as e:
-        return [], f"SEC request failed for {company}: {type(e).__name__}"
+                    continue
+
+        if not by_period:
+            return [], f"No annual 10-K revenue facts found for {company}"
+
+        annual_rows = [
+            triple[2]
+            for _, triple in sorted(by_period.items())
+        ]
+
+        return annual_rows[-5:], None
+
+    except (requests.RequestException, ValueError) as exc:
+        return [], (
+            f"SEC request failed for {company}: {type(exc).__name__}"
+        )
+
 
 
 def collect_financials(contact_email):
